@@ -82,7 +82,7 @@ func (th *TaskHandler) UpdateTasks(writer http.ResponseWriter, request *http.Req
 		return
 	}
 
-	_, err = th.DB.Exec("UPDATE tasks SET title = ?, description = ?, status = ? WHERE id = ?", task.Title, task.Description, task.Status, id)
+	_, err = service.UpdateById(th.DB, table, id, []string{"title", "description", "status"}, []any{task.Title, task.Description, task.Status, id})
 
 	rows, err := service.FindById(th.DB, table, id)
 

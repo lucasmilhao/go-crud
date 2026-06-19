@@ -2,12 +2,14 @@ package main
 
 import (
 	"fmt"
+	"log"
+	"net/http"
+
 	"github.com/gorilla/mux"
 	"github.com/lucasmilhao/go-crud/config"
 	"github.com/lucasmilhao/go-crud/handlers"
 	"github.com/lucasmilhao/go-crud/models"
-	"log"
-	"net/http"
+	"github.com/lucasmilhao/go-crud/repository"
 )
 
 func main() {
@@ -25,9 +27,11 @@ func main() {
 
 	router := mux.NewRouter()
 
-	taskHandler := handlers.NewTaskHandler(dbConn)
+	taskHandler := handlers.NewTaskHandler(repository.NewTaskRepository(dbConn))
 
 	router.HandleFunc("/tasks", taskHandler.ReadTasks).Methods("GET")
+
+	router.HandleFunc("/tasks/{id}", taskHandler.GetTask).Methods("GET")
 
 	router.HandleFunc("/tasks", taskHandler.CreateTasks).Methods("POST")
 

@@ -1,62 +1,61 @@
 package handlers
 
 import (
-	"database/sql"
 	"encoding/json"
 	"github.com/gorilla/mux"
 	"github.com/lucasmilhao/go-crud/models"
-	"github.com/lucasmilhao/go-crud/service"
+	"github.com/lucasmilhao/go-crud/repository"
 	"net/http"
 	"strconv"
 )
 
 type TaskHandler struct {
-	DB *sql.DB
+	repo repository.TaskRepository
 }
 
-func NewTaskHandler(db *sql.DB) *TaskHandler {
-	return &TaskHandler{DB: db}
+func NewTaskHandler(repo repository.TaskRepository) *TaskHandler {
+	return &TaskHandler{repo: repo}
 }
-
-const table = "tasks"
 
 func (th *TaskHandler) ReadTasks(writer http.ResponseWriter, request *http.Request) {
-	rows, err := service.FindAll(th.DB, table)
+	tasks, err := th.repo.FindAll()
 
 	if err != nil {
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
 		return
-	}
-
-	tasks := make([]models.Task, 0)
-
-	for rows.Next() {
-		var task models.Task
-		err := rows.Scan(&task.ID, &task.Title, &task.Description, &task.Status)
-
-		if err != nil {
-			http.Error(writer, err.Error(), http.StatusInternalServerError)
-		}
-
-		tasks = append(tasks, task)
 	}
 
 	writer.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(writer).Encode(tasks)
 }
 
-func (th *TaskHandler) CreateTasks(writer http.ResponseWriter, request *http.Request) {
-	var task models.Task
-
-	err := json.NewDecoder(request.Body).Decode(&task)
+func (th *TaskHandler) GetTask(writer http.ResponseWriter, request *http.Request) {
+	id, err := parseId(request)
 
 	if err != nil {
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	_, err = service.Save(th.DB, table, []string{"title", "description", "status"}, []any{task.Title, task.Description, task.Status})
+	task, err := th.repo.FindById(id)
 
 	if err != nil {
+		http.Error(writer, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	writer.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(writer).Encode(task)
+}
+
+func (th *TaskHandler) CreateTasks(writer http.ResponseWriter, request *http.Request) {
+	var task models.Task
+
+	if err := json.NewDecoder(request.Body).Decode(&task); err != nil {
+		http.Error(writer, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if err := th.repo.Save(task); err != nil {
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -65,8 +64,7 @@ func (th *TaskHandler) CreateTasks(writer http.ResponseWriter, request *http.Req
 }
 
 func (th *TaskHandler) UpdateTasks(writer http.ResponseWriter, request *http.Request) {
-	vars := mux.Vars(request)
-	id, err := strconv.Atoi(vars["id"])
+	id, err := parseId(request)
 
 	if err != nil {
 		http.Error(writer, "ID de task inválido", http.StatusBadRequest)
@@ -82,53 +80,38 @@ func (th *TaskHandler) UpdateTasks(writer http.ResponseWriter, request *http.Req
 		return
 	}
 
-	_, err = service.UpdateById(th.DB, table, id, []string{"title", "description", "status"}, []any{task.Title, task.Description, task.Status, id})
-
-	rows, err := service.FindById(th.DB, table, id)
-
-	tasks := make([]models.Task, 0)
-
-	for rows.Next() {
-		var task models.Task
-		err := rows.Scan(&task.ID, &task.Title, &task.Description, &task.Status)
-
-		if err != nil {
-			http.Error(writer, err.Error(), http.StatusInternalServerError)
-		}
-
-		tasks = append(tasks, task)
+	if err = th.repo.Update(id, task); err != nil {
+		http.Error(writer, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
-	writer.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(writer).Encode(tasks)
+	writer.WriteHeader(http.StatusNoContent)
 }
 
 func (th *TaskHandler) DeleteTasks(writer http.ResponseWriter, request *http.Request) {
-	vars := mux.Vars(request)
-	id, err := strconv.Atoi(vars["id"])
+	id, err := parseId(request)
 
 	if err != nil {
 		http.Error(writer, "ID de task inválido", http.StatusBadRequest)
 		return
 	}
 
-	result, err := service.DeleteById(th.DB, table, id)
-	if err != nil {
-		http.Error(writer, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	rowsAffected, err := result.RowsAffected()
+	isMoreThanZeroRows, err := th.repo.Delete(id)
 
 	if err != nil {
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	if rowsAffected == 0 {
+	if isMoreThanZeroRows {
 		http.Error(writer, "No task found with this id", http.StatusNotFound)
 		return
 	}
 
 	writer.WriteHeader(http.StatusNoContent)
+}
+
+func parseId(request *http.Request) (int, error) {
+	vars := mux.Vars(request)
+	return strconv.Atoi(vars["id"])
 }
